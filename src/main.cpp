@@ -4,8 +4,16 @@
 #include <math.h>
 #include "ukf.h"
 #include "tools.h"
+#define RUN_FROM_FILE true
 
 using namespace std;
+
+/*
+ * For the new data set, your algorithm will be run against
+ * "obj_pose-laser-radar-synthetic-input.txt".
+ * We'll collect the positions that your algorithm outputs and compare them to ground truth data.
+ * Your px, py, vx, and vy RMSE should be less than or equal to the values [.09, .10, .40, .30].
+ */
 
 // for convenience
 using json = nlohmann::json;
@@ -26,8 +34,123 @@ std::string hasData(std::string s) {
   return "";
 }
 
+int run_from_file() {
+  string in_file_name_ = "../data/obj_pose-laser-radar-synthetic-input.txt";
+  ifstream in_file_(in_file_name_.c_str(), ifstream::in);
+
+  vector<MeasurementPackage> measurement_pack_list;
+  vector<VectorXd> estimations;
+  vector<VectorXd> ground_truth;
+
+  string line;
+
+  // prep the measurement packages (each line represents a measurement at a timestamp)
+  while (getline(in_file_, line)) {
+
+    string sensor_type;
+    MeasurementPackage meas_package;
+    istringstream iss(line);
+    long long timestamp;
+
+    // reads first element from the current line
+    iss >> sensor_type;
+    if (sensor_type.compare("L") == 0) {
+      // LASER MEASUREMENT
+
+      // read measurements at this timestamp
+      meas_package.sensor_type_ = MeasurementPackage::LASER;
+      meas_package.raw_measurements_ = VectorXd(2);
+      float x;
+      float y;
+      iss >> x;
+      iss >> y;
+      meas_package.raw_measurements_ << x, y;
+      iss >> timestamp;
+      meas_package.timestamp_ = timestamp;
+      measurement_pack_list.push_back(meas_package);
+    } else if (sensor_type.compare("R") == 0) {
+      // RADAR MEASUREMENT
+
+      // read measurements at this timestamp
+      meas_package.sensor_type_ = MeasurementPackage::RADAR;
+      meas_package.raw_measurements_ = VectorXd(3);
+      float ro;
+      float phi;
+      float ro_dot;
+      iss >> ro;
+      iss >> phi;
+      iss >> ro_dot;
+      meas_package.raw_measurements_ << ro, phi, ro_dot;
+      iss >> timestamp;
+      meas_package.timestamp_ = timestamp;
+      measurement_pack_list.push_back(meas_package);
+
+      float px = ro * cos(phi);
+      float py = ro * sin(phi);
+    }
+
+    // read ground truth data to compare later
+    float x_gt;
+    float y_gt;
+    float vx_gt;
+    float vy_gt;
+    iss >> x_gt;
+    iss >> y_gt;
+    iss >> vx_gt;
+    iss >> vy_gt;
+    VectorXd gt_values(4);
+    gt_values << x_gt, y_gt, vx_gt, vy_gt;
+    ground_truth.push_back(gt_values);
+  }
+
+  // Create a Unscented Kalman Filter instance
+  UKF ukf;
+
+  //Call the EKF-based fusion
+  size_t N = measurement_pack_list.size();
+  for (size_t k = 0; k < N; ++k) {
+    cout << "Frame " << k << endl;
+    //Call ProcessMeasurment(meas_package) for Kalman filter
+    ukf.ProcessMeasurement(measurement_pack_list[k]);
+
+    //Push the current estimated x,y positon from the Kalman filter's state vector
+    VectorXd estimate(4);
+
+    double p_x = ukf.x_(0);
+    double p_y = ukf.x_(1);
+    double v  = ukf.x_(2);
+    double yaw = ukf.x_(3);
+
+    double v1 = cos(yaw)*v;
+    double v2 = sin(yaw)*v;
+
+    estimate(0) = p_x;
+    estimate(1) = p_y;
+    estimate(2) = v1;
+    estimate(3) = v2;
+
+    estimations.push_back(estimate);
+  }
+
+  // compute the accuracy (RMSE)
+  Tools tools;
+  cout << "Accuracy - RMSE:" << endl << tools.CalculateRMSE(estimations, ground_truth) << endl;
+
+  // close input file
+  if (in_file_.is_open()) {
+    in_file_.close();
+  }
+
+  return 0;
+}
+
+
 int main()
 {
+  if (RUN_FROM_FILE) {
+    return run_from_file();
+  }
+
   uWS::Hub h;
 
   // Create a Kalman Filter instance
@@ -109,7 +232,6 @@ int main()
     	  ukf.ProcessMeasurement(meas_package);    	  
 
     	  //Push the current estimated x,y positon from the Kalman filter's state vector
-
     	  VectorXd estimate(4);
 
     	  double p_x = ukf.x_(0);
