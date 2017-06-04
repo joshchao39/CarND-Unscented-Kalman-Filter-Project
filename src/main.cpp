@@ -4,7 +4,7 @@
 #include <math.h>
 #include "ukf.h"
 #include "tools.h"
-#define RUN_FROM_FILE true
+#define RUN_FROM_FILE false
 
 using namespace std;
 
@@ -136,6 +136,9 @@ int run_from_file() {
   Tools tools;
   cout << "Accuracy - RMSE:" << endl << tools.CalculateRMSE(estimations, ground_truth) << endl;
 
+  cout << "Laser Predicted Measurement above NIS 5% threshold = " << (double) ukf.NIS_laser_cnt / N  * 100 << "%" << endl;
+  cout << "Radar Predicted Measurement above NIS 5% threshold = " << (double) ukf.NIS_radar_cnt / N  * 100 << "%" << endl;
+
   // close input file
   if (in_file_.is_open()) {
     in_file_.close();
@@ -171,16 +174,16 @@ int main()
 
       auto s = hasData(std::string(data));
       if (s != "") {
-      	
+
         auto j = json::parse(s);
 
         std::string event = j[0].get<std::string>();
-        
+
         if (event == "telemetry") {
           // j[1] is the data JSON object
-          
+
           string sensor_measurment = j[1]["sensor_measurement"];
-          
+
           MeasurementPackage meas_package;
           istringstream iss(sensor_measurment);
     	  long long timestamp;
@@ -223,13 +226,13 @@ int main()
     	  iss >> vy_gt;
     	  VectorXd gt_values(4);
     	  gt_values(0) = x_gt;
-    	  gt_values(1) = y_gt; 
+    	  gt_values(1) = y_gt;
     	  gt_values(2) = vx_gt;
     	  gt_values(3) = vy_gt;
     	  ground_truth.push_back(gt_values);
-          
+
           //Call ProcessMeasurment(meas_package) for Kalman filter
-    	  ukf.ProcessMeasurement(meas_package);    	  
+    	  ukf.ProcessMeasurement(meas_package);
 
     	  //Push the current estimated x,y positon from the Kalman filter's state vector
     	  VectorXd estimate(4);
@@ -246,7 +249,7 @@ int main()
     	  estimate(1) = p_y;
     	  estimate(2) = v1;
     	  estimate(3) = v2;
-    	  
+
     	  estimations.push_back(estimate);
 
     	  VectorXd RMSE = tools.CalculateRMSE(estimations, ground_truth);
@@ -261,10 +264,10 @@ int main()
           auto msg = "42[\"estimate_marker\"," + msgJson.dump() + "]";
           // std::cout << msg << std::endl;
           ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
-	  
+
         }
       } else {
-        
+
         std::string msg = "42[\"manual\",{}]";
         ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
       }

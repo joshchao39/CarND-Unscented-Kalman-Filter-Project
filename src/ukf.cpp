@@ -23,12 +23,6 @@ UKF::UKF() {
   // initial covariance matrix
   P_ = MatrixXd(5, 5);
 
-  // Process noise standard deviation longitudinal acceleration in m/s^2
-  std_a_ = 30;
-
-  // Process noise standard deviation yaw acceleration in rad/s^2
-  std_yawdd_ = 30;
-
   // Laser measurement noise standard deviation position1 in m
   std_laspx_ = 0.15;
 
@@ -53,9 +47,11 @@ UKF::UKF() {
   */
   is_initialized_ = false;
 
-  std_a_ = 1;
+  // Process noise standard deviation longitudinal acceleration in m/s^2
+  std_a_ = 0.5;
 
-  std_yawdd_ = 1;
+  // Process noise standard deviation yaw acceleration in rad/s^2
+  std_yawdd_ = 0.5;
 
   n_x_ = 5;
 
@@ -79,7 +75,6 @@ UKF::UKF() {
     double weight = 0.5 / (n_aug_ + lambda_);
     weights_(i) = weight;
   }
-
 }
 
 UKF::~UKF() {}
@@ -131,7 +126,6 @@ void UKF::ProcessMeasurement(MeasurementPackage measurement_pack) {
     UpdateLidar(measurement_pack);
   }
   if (use_radar_ && measurement_pack.sensor_type_ == MeasurementPackage::RADAR) {
-//    cout << "RADAR = " << endl << measurement_pack.raw_measurements_ << endl;
     UpdateRadar(measurement_pack);
   }
   time_us_ = measurement_pack.timestamp_;
@@ -262,8 +256,6 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
 
   You'll also need to calculate the lidar NIS.
   */
-//  cout << "x_ = " << endl << x_ << endl;
-
   VectorXd z = meas_package.raw_measurements_;
 
   MatrixXd I = MatrixXd::Identity(n_x_, n_x_);
@@ -280,6 +272,9 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
 
   x_ = x_ + (K * y);
   P_ = (I - K * H) * P_;
+
+  NIS_laser_ = y.transpose() * S.inverse() * y;
+  if (NIS_laser_ > 5.991) {  NIS_laser_cnt++; }
 }
 
 /**
@@ -368,4 +363,7 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
   x_ += K * z_diff;
   FitRadian(x_(3));
   P_ -= K * S * K.transpose();
+
+  NIS_radar_ = z_diff.transpose() * S.inverse() * z_diff;
+  if (NIS_radar_ > 7.815) {  NIS_radar_cnt++; }
 }

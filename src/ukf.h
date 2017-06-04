@@ -67,6 +67,17 @@ public:
   ///* Sigma point spreading parameter
   double lambda_;
 
+  // NIS for radar
+  double NIS_radar_ = 0.0;
+
+  // NIS for laser
+  double NIS_laser_ = 0.0;
+
+  // Counts of Lidar predicted measurement about NIS Chi2 5% threshold
+  int NIS_laser_cnt = 0;
+
+  // Counts of Radar predicted measurement about NIS Chi2 5% threshold
+  int NIS_radar_cnt = 0;
 
   /**
    * Constructor
