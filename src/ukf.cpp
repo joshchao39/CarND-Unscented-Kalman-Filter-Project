@@ -129,13 +129,21 @@ void UKF::ProcessMeasurement(MeasurementPackage measurement_pack) {
 
   if (use_laser_ && measurement_pack.sensor_type_ == MeasurementPackage::LASER) {
     UpdateLidar(measurement_pack);
-    time_us_ = measurement_pack.timestamp_;
   }
   if (use_radar_ && measurement_pack.sensor_type_ == MeasurementPackage::RADAR) {
-    cout << "RADAR = " << endl << measurement_pack.raw_measurements_ << endl;
+//    cout << "RADAR = " << endl << measurement_pack.raw_measurements_ << endl;
     UpdateRadar(measurement_pack);
-    time_us_ = measurement_pack.timestamp_;
   }
+  time_us_ = measurement_pack.timestamp_;
+}
+
+
+/**
+ * Ensure angular values are within [-PI, PI]
+ */
+void FitRadian(double& rad) {
+  while (rad < -M_PI) { rad += 2 * M_PI; }
+  while (rad > M_PI) { rad -= 2 * M_PI; }
 }
 
 /**
@@ -145,9 +153,7 @@ void UKF::ProcessMeasurement(MeasurementPackage measurement_pack) {
  */
 void UKF::Prediction(double delta_t) {
   /**
-  TODO:
-
-  Complete this function! Estimate the object's location. Modify the state
+  Estimate the object's location. Modify the state
   vector, x_. Predict sigma points, the state, and the state covariance matrix.
   */
   // This prediction uses CTRV (Constant Turn Rate and Velocity Magnitude) model
@@ -223,8 +229,7 @@ void UKF::Prediction(double delta_t) {
 
   for (int i = 0; i < Xsig_pred_.cols(); i++) {
     x += weights_(i) * Xsig_pred_.col(i);
-    while (x(3) < -M_PI) { x(3) += 2 * M_PI; }
-    while (x(3) > M_PI) { x(3) -= 2 * M_PI; }
+    FitRadian(x(3));
   }
   //predict state covariance matrix
   MatrixXd P = MatrixXd(n_x_, n_x_);
@@ -232,16 +237,13 @@ void UKF::Prediction(double delta_t) {
 
   for (int i = 0; i < Xsig_pred_.cols(); i++) {
     VectorXd offset = (Xsig_pred_.col(i) - x);
-    while (offset(3) < -M_PI) { offset(3) += 2 * M_PI; }
-    while (offset(3) > M_PI) { offset(3) -= 2 * M_PI; }
+    FitRadian(offset(3));
     P += weights_(i) * offset * offset.transpose();
   }
 
   //update predicted state and covariance Matrix
   x_ = x;
   P_ = P;
-
-  cout << "x_ = " << endl << x_ << endl;
 }
 
 /**
@@ -255,8 +257,29 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
   Complete this function! Use lidar data to update the belief about the object's
   position. Modify the state vector, x_, and covariance, P_.
 
+  Note that Lidar measurement, containing only target position, is inherently linear.
+  We can use the original Kalman filter for linear estimation.
+
   You'll also need to calculate the lidar NIS.
   */
+//  cout << "x_ = " << endl << x_ << endl;
+
+  VectorXd z = meas_package.raw_measurements_;
+
+  MatrixXd I = MatrixXd::Identity(n_x_, n_x_);
+  MatrixXd H = MatrixXd(2, n_x_);
+  H << 1, 0, 0, 0, 0,
+          0, 1, 0, 0, 0;
+
+  MatrixXd R = MatrixXd(2, 2);
+  R << std_laspx_ * std_laspx_, 0,
+          0, std_laspy_ * std_laspy_;
+  VectorXd y = z - H * x_;
+  MatrixXd S = H * P_ * H.transpose() + R;
+  MatrixXd K = P_ * H.transpose() * S.inverse();
+
+  x_ = x_ + (K * y);
+  P_ = (I - K * H) * P_;
 }
 
 /**
@@ -272,7 +295,6 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
 
   You'll also need to calculate the radar NIS.
   */
-  MatrixXd R = MatrixXd(3, 3);
 
   //set measurement dimension, radar can measure r, phi, and r_dot
   long n_z = meas_package.raw_measurements_.size();
@@ -288,6 +310,7 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
   MatrixXd S = MatrixXd(n_z, n_z);
   S.fill(0.);
 
+  MatrixXd R = MatrixXd(3, 3);
   R << std_radr_ * std_radr_, 0, 0,
           0, std_radphi_ * std_radphi_, 0,
           0, 0, std_radrd_ * std_radrd_;
@@ -314,8 +337,7 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
 
   for (int i = 0; i < Zsig.cols(); i++) {
     VectorXd offset = (Zsig.col(i) - z_pred);
-    while (offset(1) < -M_PI) { offset(1) += 2. * M_PI; }
-    while (offset(1) > M_PI) { offset(1) -= 2. * M_PI; }
+    FitRadian(offset(1));
     S += weights_(i) * offset * offset.transpose();
   }
   S += R;
@@ -332,22 +354,18 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
   //update state mean and covariance matrix
   for (int i = 0; i < Xsig_pred_.cols(); i++) {
 
-    VectorXd x_diff = Xsig_pred_.col(i) - x_; // TODO: Update this guy in predict!!
-    while (x_diff(3) < -M_PI) { x_diff(3) += 2. * M_PI; }
-    while (x_diff(3) > M_PI) { x_diff(3) -= 2. * M_PI; }
+    VectorXd x_diff = Xsig_pred_.col(i) - x_;
+    FitRadian(x_diff(3));
     VectorXd z_diff = Zsig.col(i) - z_pred;
-    while (z_diff(1) < -M_PI) { z_diff(1) += 2. * M_PI; }
-    while (z_diff(1) > M_PI) { z_diff(1) -= 2. * M_PI; }
+    FitRadian(z_diff(1));
     Tc += x_diff * z_diff.transpose() * weights_(i);
   }
 
   MatrixXd K = Tc * S.inverse();
   VectorXd z_diff = z - z_pred;
 
-  while (z_diff(1) < -M_PI) { z_diff(1) += 2. * M_PI; }
-  while (z_diff(1) > M_PI) { z_diff(1) -= 2. * M_PI; }
+  FitRadian(z_diff(1));
   x_ += K * z_diff;
-  while (x_(3) < -M_PI) { x_(3) += 2 * M_PI; }
-  while (x_(3) > M_PI) { x_(3) -= 2 * M_PI; }
+  FitRadian(x_(3));
   P_ -= K * S * K.transpose();
 }
