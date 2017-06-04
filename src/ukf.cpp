@@ -53,9 +53,9 @@ UKF::UKF() {
   */
   is_initialized_ = false;
 
-  std_a_ = 6;
+  std_a_ = 1;
 
-  std_yawdd_ = 6;
+  std_yawdd_ = 1;
 
   n_x_ = 5;
 
@@ -124,9 +124,6 @@ void UKF::ProcessMeasurement(MeasurementPackage measurement_pack) {
   }
 
   double dt = (measurement_pack.timestamp_ - time_us_) / 1000000.0;    //dt - expressed in seconds
-  double dt2 = dt * dt;
-  double dt3 = dt2 * dt;
-  double dt4 = dt3 * dt;
 
   Prediction(dt);
 
@@ -153,18 +150,18 @@ void UKF::Prediction(double delta_t) {
   Complete this function! Estimate the object's location. Modify the state
   vector, x_. Predict sigma points, the state, and the state covariance matrix.
   */
-  // Using CTRV (Constant Turn Rate and Velocity Magnitude) model
+  // This prediction uses CTRV (Constant Turn Rate and Velocity Magnitude) model
 
   //calculate sigma points ...
   //set sigma points as columns of matrix Xsig
 
   //create augmented mean state
-  VectorXd x_aug = VectorXd(7);
+  VectorXd x_aug = VectorXd(n_aug_);
   x_aug.fill(0.);
   x_aug.head(n_x_) = x_;
 
   //create augmented covariance matrix
-  MatrixXd P_aug = MatrixXd(7, 7);
+  MatrixXd P_aug = MatrixXd(n_aug_, n_aug_);
   P_aug.fill(0.);
   P_aug.topLeftCorner(n_x_, n_x_) = P_;
   P_aug.bottomRightCorner(2, 2) << std_a_ * std_a_, 0,
@@ -173,17 +170,16 @@ void UKF::Prediction(double delta_t) {
   //create square root matrix
   double coef = sqrt(lambda_ + n_aug_);
 
-  //calculate square root of P
-  MatrixXd A = P_aug.llt().matrixL();
+  //calculate square root of augmented covariance matrix
+  MatrixXd L = P_aug.llt().matrixL();
 
   //create augmented sigma points
   MatrixXd Xsig_aug = MatrixXd(n_aug_, 2 * n_aug_ + 1);
 
   Xsig_aug.col(0) = x_aug;
-  MatrixXd Aplus = A * coef;
   for (int i = 0; i < n_aug_; i++) {
-    Xsig_aug.col(i + 1) = x_aug + Aplus.col(i);
-    Xsig_aug.col(i + 1 + n_aug_) = x_aug - Aplus.col(i);
+    Xsig_aug.col(i + 1) = x_aug + L.col(i) * coef;
+    Xsig_aug.col(i + 1 + n_aug_) = x_aug - L.col(i) * coef;
   }
 
   //predict sigma points
@@ -220,7 +216,32 @@ void UKF::Prediction(double delta_t) {
             delta_t * nu_yaw;
     Xsig_pred_.col(i) = xk + vec1 + vec2;
   }
-  cout << "Xsig_pred_ = " << endl << Xsig_pred_ << endl;
+
+  //predict state mean
+  VectorXd x = VectorXd(n_x_);
+  x.fill(0.);
+
+  for (int i = 0; i < Xsig_pred_.cols(); i++) {
+    x += weights_(i) * Xsig_pred_.col(i);
+    while (x(3) < -M_PI) { x(3) += 2 * M_PI; }
+    while (x(3) > M_PI) { x(3) -= 2 * M_PI; }
+  }
+  //predict state covariance matrix
+  MatrixXd P = MatrixXd(n_x_, n_x_);
+  P.fill(0.);
+
+  for (int i = 0; i < Xsig_pred_.cols(); i++) {
+    VectorXd offset = (Xsig_pred_.col(i) - x);
+    while (offset(3) < -M_PI) { offset(3) += 2 * M_PI; }
+    while (offset(3) > M_PI) { offset(3) -= 2 * M_PI; }
+    P += weights_(i) * offset * offset.transpose();
+  }
+
+  //update predicted state and covariance Matrix
+  x_ = x;
+  P_ = P;
+
+  cout << "x_ = " << endl << x_ << endl;
 }
 
 /**
@@ -286,11 +307,11 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
             (px * cos(yaw) * v + py * sin(yaw) * v) / sqrt(px2 + py2);
     Zsig.col(i) = H_x;
   }
-  cout << "Zsig = " << endl << Zsig << endl;
 
   for (int i = 0; i < Zsig.cols(); i++) {
     z_pred += weights_(i) * Zsig.col(i);
   }
+
   for (int i = 0; i < Zsig.cols(); i++) {
     VectorXd offset = (Zsig.col(i) - z_pred);
     while (offset(1) < -M_PI) { offset(1) += 2. * M_PI; }
@@ -311,7 +332,7 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
   //update state mean and covariance matrix
   for (int i = 0; i < Xsig_pred_.cols(); i++) {
 
-    VectorXd x_diff = Xsig_pred_.col(i) - x_;
+    VectorXd x_diff = Xsig_pred_.col(i) - x_; // TODO: Update this guy in predict!!
     while (x_diff(3) < -M_PI) { x_diff(3) += 2. * M_PI; }
     while (x_diff(3) > M_PI) { x_diff(3) -= 2. * M_PI; }
     VectorXd z_diff = Zsig.col(i) - z_pred;
@@ -329,5 +350,4 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
   while (x_(3) < -M_PI) { x_(3) += 2 * M_PI; }
   while (x_(3) > M_PI) { x_(3) -= 2 * M_PI; }
   P_ -= K * S * K.transpose();
-  cout << "P_ = " << endl << P_ << endl;
 }
