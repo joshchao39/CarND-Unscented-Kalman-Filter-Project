@@ -109,7 +109,7 @@ int run_from_file() {
   //Call the EKF-based fusion
   size_t N = measurement_pack_list.size();
   for (size_t k = 0; k < N; ++k) {
-    cout << "Frame " << k << endl;
+    cout << "Frame " << k + 1 << endl;
     //Call ProcessMeasurment(meas_package) for Kalman filter
     ukf.ProcessMeasurement(measurement_pack_list[k]);
 
